@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="planning_module" type="ros_interface.py" name="ros_interface" output="screen"/>
+</launch>
+
+
