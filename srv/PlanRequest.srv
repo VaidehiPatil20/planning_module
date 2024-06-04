@@ -1,0 +1,3 @@
+string mplcommand
+---
+sensor_msgs/JointState[] valid_path
