@@ -50,7 +50,7 @@ Test Service: To test the setup with a dummy service, run:
 
 ```bash
 
-python3 ~/catkin_ws/src/planning_module/nodes/test_planning_client.py
+python3 ~/catkin_ws/src/planning_module/scripts/test_planning_client.py
 ```
 
 Configuration
