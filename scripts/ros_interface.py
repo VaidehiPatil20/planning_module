@@ -68,7 +68,7 @@ class ROSInterface:
 
         rospy.loginfo(f"Received response from planning interface: {response_data}")
 
-        # Convert the valid_path to a list of JointState messages
+     
         valid_path_joint_states = self.convert_path_to_joint_states(response_data['valid_path'])
         
         return PlanRequestResponse(valid_path_joint_states)
@@ -82,6 +82,13 @@ class ROSInterface:
         else:
             rospy.logerr("Invalid MPL command format")
             return None, None
+
+
+    #To do: IK fails? 
+    #To do: move all the fcns to helper
+
+
+
 
     def inverse_kinematics(self, target_xyz, target_rpy):
         ik_solver = IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon)
@@ -200,8 +207,4 @@ if __name__ == '__main__':
     except rospy.ROSInterruptException:
         pass
 
-
-
-    #To do: IK fails? 
-    #To do: move all the fcns to helper
 
