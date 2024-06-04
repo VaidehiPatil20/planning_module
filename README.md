@@ -15,7 +15,7 @@ Step 1: Launch the ROS Interface
 Open a terminal and run the following command to start the ROS interface:
 
 ```bash
-roslaunch planning_module planning_module.launch
+roslaunch planning_module planning_launch.launch
 ```
 
 Step 2: Start the Python Nodes
@@ -46,6 +46,14 @@ Polar Planner:
 
 python3 ~/catkin_ws/src/planning_module/nodes/polar_planner.py
 ```
+
+Collision Detection:
+
+```bash
+
+python3 ~/catkin_ws/src/planning_module/nodes/collision_detection.py
+```
+
 Test Service: To test the setup with a dummy service, run:
 
 ```bash
@@ -55,6 +63,6 @@ python3 ~/catkin_ws/src/planning_module/scripts/test_planning_client.py
 
 Configuration
 
-Ensure that the config.yaml file is in the correct path and properly formatted.
+Ensure that the config.yaml file is in the correct path.
 Ensure that the URDF/ parameters are launched so the IK can access them.
 Make sure the RWS/EGM services of the robot are on and the robot can listen to joint states.
