@@ -15,9 +15,9 @@ def test_client():
                 "object": "RENISHAW_TOOL",
                 "reference": "NANO_SURFACE",
                 "coordinates": {
-                    "x": 0,
-                    "y": 0,
-                    "z": 10,
+                    "x": 0.5553,
+                    "y": -0.05120,
+                    "z": 1.0561,
                     "R": 3.1416,
                     "P": 0,
                     "Y": 0
