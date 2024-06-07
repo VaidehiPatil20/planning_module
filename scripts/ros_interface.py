@@ -74,13 +74,18 @@ class ROSInterface:
         return PlanRequestResponse(valid_path_joint_states)
 
     def parse_mpl_command(self, command):
-        pattern = re.compile(r"x: ([\-0-9.]+), y: ([\-0-9.]+), z: ([\-0-9.]+), R: ([\-0-9.]+), P: ([\-0-9.]+), Y: ([\-0-9.]+)")
-        match = pattern.search(command)
-        if match:
-            x, y, z, R, P, Y = map(float, match.groups())
+        try:
+            command_dict = json.loads(command)
+            coordinates = command_dict['parameters']['coordinates']
+            x = coordinates['x']
+            y = coordinates['y']
+            z = coordinates['z']
+            R = coordinates['R']
+            P = coordinates['P']
+            Y = coordinates['Y']
             return (x, y, z), (R, P, Y)
-        else:
-            rospy.logerr("Invalid MPL command format")
+        except Exception as e:
+            rospy.logerr(f"Failed to parse MPL command: {e}")
             return None, None
 
 
