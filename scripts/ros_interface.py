@@ -10,6 +10,10 @@ from geometry_msgs.msg import Quaternion
 from trac_ik_python.trac_ik import IK
 from planning_module.srv import PlanRequest, PlanRequestResponse
 import tf
+import rospkg
+from planning_module import *
+
+rp = rospkg.RosPack()
 
 class ROSInterface:
     def __init__(self):
@@ -18,7 +22,8 @@ class ROSInterface:
         self.service = rospy.Service('/plan_request', PlanRequest, self.handle_plan_request)
         self.last_joint_state = None
         self.planning_interface_socket = ('localhost', 8010)
-        config_path = rospy.get_param("~config_path", "/home/vaid/catkin_ws/src/planning_module/config/robot1_config.yaml")
+        # config_path = rospy.get_param("~config_path", "src/motion_planning/planning_module/config/robot1_config.yaml")
+        config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
         with open(config_path, 'r') as file:
             self.config = yaml.safe_load(file)
 
@@ -207,6 +212,12 @@ class ROSInterface:
 
 if __name__ == '__main__':
     try:
+        cd = CollisionDetection()
+        lp = LinearPlanner()
+        pm = PlanManager()
+        pi = PlanningInterface()
+        pp = PolarPlanner()
+        
         ros_interface = ROSInterface()
         rospy.spin()
     except rospy.ROSInterruptException:
