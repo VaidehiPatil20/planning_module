@@ -9,6 +9,7 @@ def test_client():
     try:
         plan_request = rospy.ServiceProxy('/plan_request', PlanRequest)
         command = {
+
             "uuid": "5BFBE7E3-32AC-4148-A23A-20CE801E91E1",
             "directive": "move",
             "parameters": {
@@ -40,6 +41,9 @@ def test_client():
                 "fulfilled_at": None
             },
             "valid": True
+
+           
+
         }
         command_str = json.dumps(command)
         response = plan_request(command_str)
