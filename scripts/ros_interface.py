@@ -9,6 +9,7 @@ from sensor_msgs.msg import JointState
 from geometry_msgs.msg import Quaternion
 from trac_ik_python.trac_ik import IK
 from planning_module.srv import PlanRequest, PlanRequestResponse
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import tf
 
 class ROSInterface:
@@ -69,9 +70,10 @@ class ROSInterface:
         rospy.loginfo(f"Received response from planning interface: {response_data}")
 
      
-        valid_path_joint_states = self.convert_path_to_joint_states(response_data['valid_path'])
+        #valid_path_joint_states = self.convert_path_to_joint_states(response_data['valid_path'])
+        valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'])
         
-        return PlanRequestResponse(valid_path_joint_states)
+        return PlanRequestResponse(valid_path_msg)
 
     def parse_mpl_command(self, command):
         try:
@@ -102,7 +104,7 @@ class ROSInterface:
         solution = ik_solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
         rospy.loginfo(f"IK Solution: {solution}")
         return solution
-
+    '''
     def convert_path_to_joint_states(self, valid_path):
         joint_state_msgs = []
         for joint_positions in valid_path:
@@ -112,7 +114,23 @@ class ROSInterface:
             joint_state.position = joint_positions
             joint_state_msgs.append(joint_state)
         return joint_state_msgs
+    '''
 
+    def convert_path_to_joint_trajectory(self, valid_path):
+        trajectory_msg = JointTrajectory()
+        trajectory_msg.joint_names = self.joint_names
+        time_from_start = rospy.Duration(0.0)
+
+        for i, joint_positions in enumerate(valid_path):
+            point = JointTrajectoryPoint()
+            point.positions = joint_positions
+            point.time_from_start = time_from_start
+            trajectory_msg.points.append(point)
+
+            
+            time_from_start += rospy.Duration(0.1)  
+
+        return trajectory_msg
     def rotation_matrix_z(self, theta):
         return np.array([
             [np.cos(theta), -np.sin(theta), 0],
