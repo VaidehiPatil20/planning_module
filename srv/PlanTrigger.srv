@@ -1,0 +1,4 @@
+trajectory_msgs/JointTrajectory path
+---
+bool success
+string message
