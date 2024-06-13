@@ -71,6 +71,7 @@ class ROSInterface:
 
      
         #valid_path_joint_states = self.convert_path_to_joint_states(response_data['valid_path'])
+        
         valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'])
         
         return PlanRequestResponse(valid_path_msg)

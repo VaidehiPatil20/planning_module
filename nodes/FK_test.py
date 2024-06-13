@@ -91,7 +91,7 @@ class RobotKinematicsWithIK(RobotKinematics):
         rospy.loginfo(f"IK Solution: {solution}")
         return solution
 
-# Parameters
+
 chain_start = "irb1300_1150_base_link"
 chain_end = "irb1300_1150_link_6"
 ik_timeout = 0.005
@@ -126,15 +126,42 @@ print ("joint angles: ", joint_angles)
 print("Forward Kinematics Position:", fk_position)
 print("Forward Kinematics Orientation (Euler):", fk_orientation_euler)
 
-target_xyz = fk_position 
-target_rpy = fk_orientation_euler 
+target1_xyz = [0.8, -0.3, 1.1]
+target_rpy = [3.14, 0,0]
 
-ik_solution = robot_kinematics_with_ik.inverse_kinematics(target_xyz, target_rpy)
+target2_xyz = [0.8, -0.3, 0.8]
+target2_rpy = [3.14, 0,0]
 
-print("Inverse Kinematics Solution:", ik_solution)
+target3_xyz = [0.8, 0.3, 0.8]
+target3_rpy = [3.14, 0,0]
+
+target4_xyz = [0.8, 0.3, 1.1]
+target4_rpy = [3.14, 0,0]
+
+target5_xyz = [0.8, 0.0, 1.1]
+target5_rpy = [3.14, 0,0]
+
+#target_xyz = fk_position
+#target_rpy = fk_orientation_euler 
+
+ik_solution1 = robot_kinematics_with_ik.inverse_kinematics(target1_xyz, target_rpy)
+ik_solution2 = robot_kinematics_with_ik.inverse_kinematics(target2_xyz, target_rpy)
+ik_solution3 = robot_kinematics_with_ik.inverse_kinematics(target3_xyz, target_rpy)
+ik_solution4 = robot_kinematics_with_ik.inverse_kinematics(target4_xyz, target_rpy)
+ik_solution5 = robot_kinematics_with_ik.inverse_kinematics(target5_xyz, target_rpy)
+
+print("Inverse Kinematics Solution:", ik_solution1,ik_solution2,ik_solution3,ik_solution4, ik_solution5)
+'''
+(0.39677288477922706, 0.5051698249733789, 0.2062178437378902, 0.5705592723984264, -0.7973405634980888, 2.718527590734607)
+(0.39677330960725826, 0.354810053224098, -0.3003692794908953, 1.4416510095822452, -0.40029478315457717, 1.709296069530121)
+
+'''
+
+(-0.3967736653543833, 0.3548073453241609, -0.3003656544931813, 1.7000202085082994, 0.40026636525137205, 1.429031978609123) 
+(-0.3967728838841544, 0.5051698238903283, 0.20621784703838156, 2.571033388852735, 0.7973405632799371, 0.4198797468655313) 
+(0.39677288477922706, 0.5051698249733789, 0.2062178437378902, 0.5705592723984264, -0.7973405634980888, 2.718527590734607) 
+(0.3967733839982392, 0.35480820867682744, -0.30036710437113284, 1.4416812578124163, -0.4002838232220414, 1.7092674457949526)
 
 
 
-
-
-
+(4.729235871400703e-12, 0.2443837348569232, -0.14605690371548208, -3.141592620282344, 0.09832658785737869, -0.0015926862826155398)
