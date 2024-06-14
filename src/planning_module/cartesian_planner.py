@@ -80,6 +80,14 @@ class RobotModel:
     def quaternion_to_rpy(self, quaternion):
         euler = tf.transformations.euler_from_quaternion([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
         return np.array(euler)
+    
+    def inverse_kinematic(self, target_xyz, target_rpy, seed_state=None):
+        ik_solver = IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon)
+        orientation = self.rpy_to_quaternion(*target_rpy)
+        if not seed_state:
+            seed_state = [0.0] * ik_solver.number_of_joints
+        solution = ik_solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
+        return solution
 
     def inverse_kinematics(self, target_xyz, target_rpy, num_solutions= 60):
         ik_solvers = {
@@ -143,9 +151,10 @@ class CartesianPlanner(SocketServer):
     def handle_plan_request(self, request):
         start_angles = request['start_angles']
         goal_angles = request['goal_angles']
+        tolerance = request.get('tolerance', 0.01)
         num_steps = request.get('num_steps', 20)
 
-        cartesian_path = self.cartesian_path_planner(start_angles, goal_angles, num_steps)
+        cartesian_path = self.cartesian_path_planner(start_angles, goal_angles, num_steps, tolerance)
         
         return {'valid_path': cartesian_path}
 
@@ -157,9 +166,14 @@ class CartesianPlanner(SocketServer):
             interpolated_points.append(interpolated_point)
         return interpolated_points
 
-    def cartesian_path_planner(self, start_angles, goal_angles, num_steps=20):
+    def cartesian_path_planner(self, start_angles, goal_angles, num_steps=20, tolerance=0.01):
         start_pos, start_orient_matrix = self.robot.extended_forward_kinematics(start_angles)
         goal_pos, goal_orient_matrix = self.robot.extended_forward_kinematics(goal_angles)
+        
+        dist = np.linalg.norm(goal_pos - start_pos)
+        num_steps = max(int(dist / tolerance), 3)
+        
+        print(f"Distance: {dist}, Num steps: {num_steps}")
 
         start_orient_rpy = self.robot.rotation_matrix_to_euler_angles(start_orient_matrix)
         goal_orient_rpy = self.robot.rotation_matrix_to_euler_angles(goal_orient_matrix)
@@ -169,12 +183,17 @@ class CartesianPlanner(SocketServer):
 
         cartesian_path = self.interpolate_cartesian_points(start_point, end_point, num_steps)
         
-        joint_trajectories = {solver_type: [] for solver_type in ["Distance"]}
+        joint_trajectories = {solver_type: [] for solver_type in ["Distance", "SimpleSeed"]}
         
         current_joint_angles = start_angles
         for point in cartesian_path:
             target_xyz = point[:3]
             target_rpy = point[3:]
+            
+            solution = self.robot.inverse_kinematic(target_xyz, target_rpy, current_joint_angles)
+            joint_trajectories["SimpleSeed"].append(solution)
+            current_joint_angles = solution
+            continue
 
             solutions = self.robot.inverse_kinematics(target_xyz, target_rpy)
             best_solver_type, best_solution = self.robot.select_best_solution(solutions, current_joint_angles)
@@ -185,7 +204,7 @@ class CartesianPlanner(SocketServer):
             else:
                 print(f"No valid IK solution found for point {point}")
         
-        return joint_trajectories["Distance"]
+        return joint_trajectories["SimpleSeed"]
 
 if __name__ == '__main__':
     rospy.init_node('cartesian_planner')
