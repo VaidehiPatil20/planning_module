@@ -7,7 +7,7 @@ class PlanManager:
     def __init__(self, host='localhost', port=8011):
         self.server_address = (host, port)
         self.linear_planner_socket = ('localhost', 8012)
-        self.polar_planner_socket = ('localhost', 8013)
+        self.cartesian_planner_socket = ('localhost', 8013)
         self.start_server()
 
     def start_server(self):
@@ -33,14 +33,16 @@ class PlanManager:
                         response = self.handle_plan_request(request)
                         print(f"Plan Manager sending resp: {response}")
                         conn.sendall(json.dumps(response).encode('utf-8'))
+                        
+#TODO: choose best reponse and return 
 
     def handle_plan_request(self, request):
         linear_response = self.send_request_to_planner(self.linear_planner_socket, request)
-        polar_response = self.send_request_to_planner(self.polar_planner_socket, request)
-        if linear_response is None or polar_response is None:
+        cartesian_response = self.send_request_to_planner(self.cartesian_planner_socket, request)
+        if linear_response is None or cartesian_response is None:
             print("No response from planner")
             return {'valid_path': []}
-        return linear_response 
+        return cartesian_response 
 
 
     def send_request_to_planner(self, planner_socket, data):
