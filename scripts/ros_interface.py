@@ -13,6 +13,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import tf
 import rospkg
 from planning_module import *
+from typing import List
 
 rp = rospkg.RosPack()
 
@@ -231,17 +232,26 @@ class ROSInterface:
 
 if __name__ == '__main__':
     try:
-        cd = CollisionDetection()
-        lp = LinearPlanner()
         config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
         robot_model = RobotModel(config_path)
-        CartesianPlanner(robot_model)
-        pm = PlanManager()
-        pi = PlanningInterface()
-        # pp = PolarPlanner()
         
-        ros_interface = ROSInterface()
-        rospy.spin()
+        threads:List[SocketServer] = []
+        
+        threads.append(CollisionDetection())
+        threads.append(LinearPlanner())
+        threads.append(CartesianPlanner(robot_model))
+        threads.append(PlanManager())
+        threads.append(PlanningInterface())
+        
+        ROSInterface()
+        
+        while not rospy.is_shutdown():
+            rospy.sleep(1)
+          
+        for thread in threads:
+            thread.shutdown_server()  
+            
+        # rospy.spin()
     except rospy.ROSInterruptException:
         pass
 
