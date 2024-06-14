@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-import socket
-import json
 import numpy as np
-from threading import Thread
 import rospy
 from trac_ik_python.trac_ik import IK
 from geometry_msgs.msg import Quaternion
-import tf
+import tf.transformations
 import yaml
-
+from .socket_server import SocketServer
 class RobotModel:
     def __init__(self, config_path):
         with open(config_path, 'r') as file:
@@ -116,34 +113,34 @@ class RobotModel:
         
         return best_solution, best_deviation
 
-class CartesianPlanner:
-    def __init__(self, robot_model, host='localhost', port=8013):
-        self.robot = robot_model
-        self.server_address = (host, port)
-        self.start_server()
+class CartesianPlanner(SocketServer):
+    def __init__(self, robot_model: RobotModel, host='localhost', port=8013):
+        self.robot:RobotModel = robot_model
+        super().__init__(host, port, id="CartesianPlanner")
+        self.start_server(self.handle_plan_request)
 
-    def start_server(self):
-        server = Thread(target=self.run_server)
-        server.start()
+    # def start_server(self):
+    #     server = Thread(target=self.run_server)
+    #     server.start()
       
-    def run_server(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(self.server_address)
-            s.listen()
-            print("Cartesian Planner Listening")
-            while True:
-                conn, addr = s.accept()
-                with conn:
-                    data = conn.recv(8192)  
-                    if data:
-                        request = json.loads(data.decode('utf-8'))
-                        print(f"Received request: {request}")
-                        start_angles = request['start_angles']
-                        goal_angles = request['goal_angles']
+    # def run_server(self):
+    #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    #         s.bind(self.server_address)
+    #         s.listen()
+    #         print("Cartesian Planner Listening")
+    #         while True:
+    #             conn, addr = s.accept()
+    #             with conn:
+    #                 data = conn.recv(8192)  
+    #                 if data:
+    #                     request = json.loads(data.decode('utf-8'))
+    #                     print(f"Received request: {request}")
+    #                     start_angles = request['start_angles']
+    #                     goal_angles = request['goal_angles']
                     
-                        response = self.handle_plan_request(request)
-                        print(f"Sending response: {response}")
-                        conn.sendall(json.dumps(response).encode('utf-8'))
+    #                     response = self.handle_plan_request(request)
+    #                     print(f"Sending response: {response}")
+    #                     conn.sendall(json.dumps(response).encode('utf-8'))
 
     def handle_plan_request(self, request):
         start_angles = request['start_angles']

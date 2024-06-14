@@ -1,38 +1,37 @@
 #!/usr/bin/env python3
 import socket
 import json
-from threading import Thread
-
-class PlanManager:
+from .socket_server import SocketServer
+class PlanManager(SocketServer):
     def __init__(self, host='localhost', port=8011):
-        self.server_address = (host, port)
         self.linear_planner_socket = ('localhost', 8012)
         self.cartesian_planner_socket = ('localhost', 8013)
-        self.start_server()
+        super().__init__(host, port, id="PlanManager")
+        self.start_server(self.handle_plan_request)
 
-    def start_server(self):
-        server = Thread(target=self.run_server)
-        server.start()
+    # def start_server(self):
+    #     server = Thread(target=self.run_server)
+    #     server.start()
        
 
-    def run_server(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(self.server_address)
-            s.listen()
-            print("Plan Managerv is listening ")
-            while True:
-                conn, addr = s.accept()
-                with conn:
-                    data = conn.recv(8192) 
-                    if data:
-                        request = json.loads(data.decode('utf-8'))
-                        print(f"Plan Manager received req: {request}")
-                        start_angles = request['start_angles']
-                        goal_angles = request['goal_angles']
+    # def run_server(self):
+    #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    #         s.bind(self.server_address)
+    #         s.listen()
+    #         print("Plan Managerv is listening ")
+    #         while True:
+    #             conn, addr = s.accept()
+    #             with conn:
+    #                 data = conn.recv(8192) 
+    #                 if data:
+    #                     request = json.loads(data.decode('utf-8'))
+    #                     print(f"Plan Manager received req: {request}")
+    #                     start_angles = request['start_angles']
+    #                     goal_angles = request['goal_angles']
                       
-                        response = self.handle_plan_request(request)
-                        print(f"Plan Manager sending resp: {response}")
-                        conn.sendall(json.dumps(response).encode('utf-8'))
+    #                     response = self.handle_plan_request(request)
+    #                     print(f"Plan Manager sending resp: {response}")
+    #                     conn.sendall(json.dumps(response).encode('utf-8'))
                         
 #TODO: choose best reponse and return 
 
