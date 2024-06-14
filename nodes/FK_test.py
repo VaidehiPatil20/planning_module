@@ -83,15 +83,31 @@ class RobotKinematicsWithIK(RobotKinematics):
         q = tf.transformations.quaternion_from_euler(roll, pitch, yaw)
         return q
 
-    def inverse_kinematics(self, target_xyz, target_rpy):
-        ik_solver = IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon)
+    def inverse_kinematics(self, target_xyz, target_rpy, initial_state=None):
+        if initial_state is None:
+            initial_state = [0.0] * 6
+        
+        ik_solvers = {
+            "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
+            "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed")
+        }
+        
         orientation = self.rpy_to_quaternion(*target_rpy)
-        seed_state = [0.0] * ik_solver.number_of_joints
-        solution = ik_solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation[0], orientation[1], orientation[2], orientation[3])
-        rospy.loginfo(f"IK Solution: {solution}")
-        return solution
+        solutions = []
+        
+        for solver_type, solver in ik_solvers.items():
+            for _ in range(20):
+                seed_state = np.random.uniform(-np.pi, np.pi, solver.number_of_joints)
+                solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation[0], orientation[1], orientation[2], orientation[3])
+                if solution is not None:
+                    solutions.append(solution)
+        
+        best_solution = min(solutions, key=lambda sol: np.linalg.norm(np.array(sol) - np.array(initial_state)))
+        rospy.loginfo(f"Best IK Solution: {best_solution}")
+        return best_solution
 
 
+# Example usage
 chain_start = "irb1300_1150_base_link"
 chain_end = "irb1300_1150_link_6"
 ik_timeout = 0.005
@@ -117,51 +133,31 @@ joint_axes = [
 
 robot_kinematics_with_ik = RobotKinematicsWithIK(chain_start, chain_end, ik_timeout, ik_epsilon, joint_axes, joint_origins)
 
-joint_angles = [0.16884467942713272, -0.42489646625118677, -0.014985004081441402, 0.4261463543297882, 0.44355550495466345, -6.387017435389261e-05]
-
-#joint_angles = [0,0,0,0,0,0]
+joint_angles =  (6.756426930389055e-05, 0.24438377122318405, -0.14603311062627025, -3.1350263721032525, 0.09846837520762035, -0.008194853878780606)
 
 fk_position, fk_orientation_euler = robot_kinematics_with_ik.extended_forward_kinematics(joint_angles)
-print ("joint angles: ", joint_angles)
+print("Joint angles: ", joint_angles)
 print("Forward Kinematics Position:", fk_position)
 print("Forward Kinematics Orientation (Euler):", fk_orientation_euler)
 
 target1_xyz = [0.8, -0.3, 1.1]
-target_rpy = [3.14, 0,0]
-
-target2_xyz = [0.8, -0.3, 0.8]
-target2_rpy = [3.14, 0,0]
-
-target3_xyz = [0.8, 0.3, 0.8]
-target3_rpy = [3.14, 0,0]
-
-target4_xyz = [0.8, 0.3, 1.1]
-target4_rpy = [3.14, 0,0]
-
-target5_xyz = [0.8, 0.0, 1.1]
-target5_rpy = [3.14, 0,0]
-
-#target_xyz = fk_position
-#target_rpy = fk_orientation_euler 
+target_rpy = [3.14, 0, 0]
 
 ik_solution1 = robot_kinematics_with_ik.inverse_kinematics(target1_xyz, target_rpy)
+print("Inverse Kinematics Solution for target 1:", ik_solution1)
+
+target2_xyz = [0.8, -0.3, 0.8]
 ik_solution2 = robot_kinematics_with_ik.inverse_kinematics(target2_xyz, target_rpy)
+print("Inverse Kinematics Solution for target 2:", ik_solution2)
+
+target3_xyz = [0.8, 0.3, 0.8]
 ik_solution3 = robot_kinematics_with_ik.inverse_kinematics(target3_xyz, target_rpy)
+print("Inverse Kinematics Solution for target 3:", ik_solution3)
+
+target4_xyz = [0.8, 0.3, 1.1]
 ik_solution4 = robot_kinematics_with_ik.inverse_kinematics(target4_xyz, target_rpy)
+print("Inverse Kinematics Solution for target 4:", ik_solution4)
+
+target5_xyz = [0.8, 0.0, 1.1]
 ik_solution5 = robot_kinematics_with_ik.inverse_kinematics(target5_xyz, target_rpy)
-
-print("Inverse Kinematics Solution:", ik_solution1,ik_solution2,ik_solution3,ik_solution4, ik_solution5)
-'''
-(0.39677288477922706, 0.5051698249733789, 0.2062178437378902, 0.5705592723984264, -0.7973405634980888, 2.718527590734607)
-(0.39677330960725826, 0.354810053224098, -0.3003692794908953, 1.4416510095822452, -0.40029478315457717, 1.709296069530121)
-
-'''
-
-(-0.3967736653543833, 0.3548073453241609, -0.3003656544931813, 1.7000202085082994, 0.40026636525137205, 1.429031978609123) 
-(-0.3967728838841544, 0.5051698238903283, 0.20621784703838156, 2.571033388852735, 0.7973405632799371, 0.4198797468655313) 
-(0.39677288477922706, 0.5051698249733789, 0.2062178437378902, 0.5705592723984264, -0.7973405634980888, 2.718527590734607) 
-(0.3967733839982392, 0.35480820867682744, -0.30036710437113284, 1.4416812578124163, -0.4002838232220414, 1.7092674457949526)
-
-
-
-(4.729235871400703e-12, 0.2443837348569232, -0.14605690371548208, -3.141592620282344, 0.09832658785737869, -0.0015926862826155398)
+print("Inverse Kinematics Solution for target 5:", ik_solution5)

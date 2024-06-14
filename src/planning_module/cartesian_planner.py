@@ -16,9 +16,8 @@ class RobotModel:
 
         self.chain_start = self.config['ik']['chain_start']
         self.chain_end = self.config['ik']['chain_end']
-        self.ik_timeout = float(self.config['ik']['timeout'])
-        self.ik_epsilon = float(self.config['ik']['epsilon'])
-
+        self.ik_timeout = 0.01
+        self.ik_epsilon = 1e-3
         self.joint_names = self.config['joint_names']
         self.joint_origins = [np.array(origin) for origin in self.config['fk']['joint_origins']]
         self.joint_axes = [np.array(axis) for axis in self.config['fk']['joint_axes']]
@@ -84,17 +83,16 @@ class RobotModel:
         euler = tf.transformations.euler_from_quaternion([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
         return np.array(euler)
 
-    def inverse_kinematics(self, target_xyz, target_rpy, num_solutions= 60):
+    def inverse_kinematics(self, target_xyz, target_rpy, seed_state):
         ik_solvers = {
             "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
+            "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed")
         }
         orientation = self.rpy_to_quaternion(*target_rpy)
-        
-        seed_states = [np.random.uniform(-np.pi, np.pi, ik_solvers["Distance"].number_of_joints) for _ in range(num_solutions)]
         solutions = {solver_type: [] for solver_type in ik_solvers}
         
         for solver_type, solver in ik_solvers.items():
-            for seed_state in seed_states:
+            for _ in range(10):
                 solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
                 if solution is not None:
                     solutions[solver_type].append(solution)
@@ -103,16 +101,20 @@ class RobotModel:
 
     def select_best_solution(self, solutions, current_joint_angles):
         best_solution = None
-        best_distance = float('inf')
+        best_deviation = float('inf')
         
-        for solver_type, solver_solutions in solutions.items():
-            for solution in solver_solutions:
-                distance = np.linalg.norm(np.array(solution) - np.array(current_joint_angles))
-                if distance < best_distance:
-                    best_distance = distance
+        for solver_type, solution_list in solutions.items():
+            for solution in solution_list:
+                deviation = np.sum(np.abs(np.array(solution) - np.array(current_joint_angles)))
+                
+                if np.any(np.abs(np.array(solution) - np.array(current_joint_angles)) > np.pi):
+                    continue
+
+                if deviation < best_deviation:
+                    best_deviation = deviation
                     best_solution = (solver_type, solution)
         
-        return best_solution
+        return best_solution, best_deviation
 
 class CartesianPlanner:
     def __init__(self, robot_model, host='localhost', port=8013):
@@ -153,12 +155,8 @@ class CartesianPlanner:
         return {'valid_path': cartesian_path}
 
     def interpolate_cartesian_points(self, start_point, end_point, num_steps):
-        interpolated_points = []
-        for i in range(num_steps):
-            fraction = i / float(num_steps - 1)
-            interpolated_point = start_point + fraction * (end_point - start_point)
-            interpolated_points.append(interpolated_point)
-        return interpolated_points
+        t = np.linspace(0, 1, num_steps)
+        return np.outer(1 - t, start_point) + np.outer(t, end_point)
 
     def cartesian_path_planner(self, start_angles, goal_angles, num_steps=20):
         start_pos, start_orient_matrix = self.robot.extended_forward_kinematics(start_angles)
@@ -172,27 +170,33 @@ class CartesianPlanner:
 
         cartesian_path = self.interpolate_cartesian_points(start_point, end_point, num_steps)
         
-        joint_trajectories = {solver_type: [] for solver_type in ["Distance"]}
-        
+        joint_trajectory = []
         current_joint_angles = start_angles
+        max_deviation = np.zeros(len(start_angles))
+        
         for point in cartesian_path:
             target_xyz = point[:3]
             target_rpy = point[3:]
 
-            solutions = self.robot.inverse_kinematics(target_xyz, target_rpy)
-            best_solver_type, best_solution = self.robot.select_best_solution(solutions, current_joint_angles)
+            solutions = self.robot.inverse_kinematics(target_xyz, target_rpy, current_joint_angles)
+            best_solution, _ = self.robot.select_best_solution(solutions, current_joint_angles)
             
             if best_solution is not None:
-                joint_trajectories[best_solver_type].append(best_solution)
-                current_joint_angles = best_solution
+                joint_trajectory.append(best_solution[1])
+                deviation = np.abs(np.array(best_solution[1]) - np.array(current_joint_angles))
+                max_deviation = np.maximum(max_deviation, deviation)
+                current_joint_angles = best_solution[1]
             else:
                 print(f"No valid IK solution found for point {point}")
         
-        return joint_trajectories["Distance"]
+        print("\nMaximum Deviation in Joint Angles:")
+        print(max_deviation)
 
-if __name__ == '__main__':
-    rospy.init_node('cartesian_planner')
-    
+        return joint_trajectory
+
+if __name__ == "__main__":
+    rospy.init_node('planner_comparison')
+
     config_path = rospy.get_param("~config_path", "/home/vaid/catkin_ws/src/planning_module/config/robot1_config.yaml")
     robot_model = RobotModel(config_path)
     CartesianPlanner(robot_model)

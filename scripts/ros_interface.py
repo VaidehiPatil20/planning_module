@@ -23,7 +23,6 @@ class ROSInterface:
         self.service = rospy.Service('/plan_request', PlanRequest, self.handle_plan_request)
         self.last_joint_state = None
         self.planning_interface_socket = ('localhost', 8010)
-        # config_path = rospy.get_param("~config_path", "src/motion_planning/planning_module/config/robot1_config.yaml")
         config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
         with open(config_path, 'r') as file:
             self.config = yaml.safe_load(file)
@@ -54,7 +53,7 @@ class ROSInterface:
             rospy.logerr("Failed to parse MPL command.")
             return PlanRequestResponse()
 
-        goal_angles = self.inverse_kinematics(goal_xyz, goal_rpy)
+        goal_angles = self.inverse_kinematics(goal_xyz, goal_rpy, start_angles)
         if goal_angles is not None:
             rospy.loginfo(f"Computed goal joint angles: {goal_angles}")
         else:
@@ -74,11 +73,8 @@ class ROSInterface:
 
         rospy.loginfo(f"Received response from planning interface: {response_data}")
 
-     
-        #valid_path_joint_states = self.convert_path_to_joint_states(response_data['valid_path'])
-        
         valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'])
-        
+
         return PlanRequestResponse(valid_path_msg)
 
     def parse_mpl_command(self, command):
@@ -96,31 +92,33 @@ class ROSInterface:
             rospy.logerr(f"Failed to parse MPL command: {e}")
             return None, None
 
+    def inverse_kinematics(self, target_xyz, target_rpy, initial_state=None):
+        if initial_state is None:
+            initial_state = [0.0] * 6
 
-    #To do: IK fails? 
-    #To do: move all the fcns to helper
+        ik_solvers = {
+            "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
+            "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed")
+            #can add Manipulation solvers too
+        }
 
-
-
-
-    def inverse_kinematics(self, target_xyz, target_rpy):
-        ik_solver = IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon)
         orientation = self.rpy_to_quaternion(*target_rpy)
-        seed_state = [0.0] * ik_solver.number_of_joints
-        solution = ik_solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
-        rospy.loginfo(f"IK Solution: {solution}")
-        return solution
-    '''
-    def convert_path_to_joint_states(self, valid_path):
-        joint_state_msgs = []
-        for joint_positions in valid_path:
-            joint_state = JointState()
-            joint_state.header.stamp = rospy.Time.now()
-            joint_state.name = self.joint_names
-            joint_state.position = joint_positions
-            joint_state_msgs.append(joint_state)
-        return joint_state_msgs
-    '''
+        solutions = []
+
+        for solver_type, solver in ik_solvers.items():
+            for _ in range(10):
+                seed_state = np.random.uniform(-np.pi, np.pi, solver.number_of_joints)
+                solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
+                if solution is not None:
+                    solutions.append(solution)
+                    rospy.loginfo(f"{solver_type} solution: {solution}")
+
+        if not solutions:
+            return None
+
+        best_solution = min(solutions, key=lambda sol: np.linalg.norm(np.array(sol) - np.array(initial_state)))
+        rospy.loginfo(f"Best IK Solution: {best_solution}")
+        return best_solution
 
     def convert_path_to_joint_trajectory(self, valid_path):
         trajectory_msg = JointTrajectory()
@@ -132,11 +130,10 @@ class ROSInterface:
             point.positions = joint_positions
             point.time_from_start = time_from_start
             trajectory_msg.points.append(point)
-
-            
             time_from_start += rospy.Duration(0.1)  
 
         return trajectory_msg
+
     def rotation_matrix_z(self, theta):
         return np.array([
             [np.cos(theta), -np.sin(theta), 0],
@@ -231,6 +228,7 @@ class ROSInterface:
 
 if __name__ == '__main__':
     try:
+        
         cd = CollisionDetection()
         lp = LinearPlanner()
         config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
@@ -238,11 +236,7 @@ if __name__ == '__main__':
         CartesianPlanner(robot_model)
         pm = PlanManager()
         pi = PlanningInterface()
-        # pp = PolarPlanner()
-        
         ros_interface = ROSInterface()
         rospy.spin()
     except rospy.ROSInterruptException:
         pass
-
-
