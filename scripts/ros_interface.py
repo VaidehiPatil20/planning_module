@@ -50,15 +50,17 @@ class ROSInterface:
         if self.last_joint_state is None:
             rospy.logwarn("No valid joint state available. Using default [0, 0, 0, 0, 0, 0].")
             start_angles = [0, 0, 0, 0, 0, 0]
+            raise Exception("No valid joint state available.")
         else:
             start_angles = list(self.last_joint_state.position)
 
-        goal_xyz, goal_rpy, object_frame, reference_frame = self.parse_mpl_command(req.mplcommand)
+        goal_xyz, goal_rpy, object_frame, reference_frame, tolerance = self.parse_mpl_command(req.mplcommand)
         if goal_xyz is not None and goal_rpy is not None:
             rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}")
         else:
             rospy.logerr("Failed to parse MPL command.")
-            return PlanRequestResponse()
+            raise Exception("Failed to parse MPL command.")
+            # return PlanRequestResponse()
 
         try:
             object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(goal_xyz, goal_rpy, object_frame, reference_frame)
@@ -75,17 +77,20 @@ class ROSInterface:
             rospy.loginfo(f"Computed goal joint angles: {goal_angles}")
         else:
             rospy.logerr("Inverse kinematics failed to compute goal joint angles.")
-            return PlanRequestResponse()
+            raise Exception("Inverse kinematics failed to compute goal joint angles.")
+            # return PlanRequestResponse()
 
         request_data = {
             'start_angles': start_angles,
-            'goal_angles': goal_angles
+            'goal_angles': goal_angles,
+            'tolerance': tolerance
         }
         rospy.loginfo(f"Sending request to planning interface: {request_data}")
 
         response_data = self.send_request_to_planning_interface(request_data)
         if response_data is None:
             rospy.logerr("No response from planning interface")
+            raise Exception("No response from planning interface")
             return PlanRequestResponse()
 
         rospy.loginfo(f"Received response from planning interface: {response_data}")
@@ -106,7 +111,10 @@ class ROSInterface:
             R = coordinates['R']
             P = coordinates['P']
             Y = coordinates['Y']
-            return (x, y, z), (R, P, Y), object_frame, reference_frame
+            
+            options:dict = command_dict['parameters']['options']
+            tolerance = options.get('TOL', 0.01)
+            return (x, y, z), (R, P, Y), object_frame, reference_frame, tolerance
         except Exception as e:
             rospy.logerr(f"Failed to parse MPL command: {e}")
             return None, None, None, None
@@ -200,7 +208,8 @@ class ROSInterface:
 
         for solver_type, solver in ik_solvers.items():
             for _ in range(10):
-                seed_state = np.random.uniform(-np.pi, np.pi, solver.number_of_joints)
+                if not seed_state:
+            seed_state = np.random.uniform(-np.pi, np.pi, solver.number_of_joints)
                 solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
                 if solution is not None:
                     solutions.append(solution)
