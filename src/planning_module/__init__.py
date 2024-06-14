@@ -4,3 +4,4 @@ from .plan_manager import PlanManager
 from .planning_interface import PlanningInterface
 from .polar_planner import PolarPlanner
 from .request_tracker import RequestTracker
+from .cartesian_planner import CartesianPlanner, RobotModel

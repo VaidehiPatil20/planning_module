@@ -233,9 +233,12 @@ if __name__ == '__main__':
     try:
         cd = CollisionDetection()
         lp = LinearPlanner()
+        config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
+        robot_model = RobotModel(config_path)
+        CartesianPlanner(robot_model)
         pm = PlanManager()
         pi = PlanningInterface()
-        pp = PolarPlanner()
+        # pp = PolarPlanner()
         
         ros_interface = ROSInterface()
         rospy.spin()
