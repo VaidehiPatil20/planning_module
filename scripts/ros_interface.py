@@ -6,11 +6,13 @@ import re
 import yaml
 import numpy as np
 from sensor_msgs.msg import JointState
-from geometry_msgs.msg import Quaternion
+from geometry_msgs.msg import Quaternion, TransformStamped
 from trac_ik_python.trac_ik import IK
 from planning_module.srv import PlanRequest, PlanRequestResponse
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 import tf
+import tf2_ros
+from tf import TransformListener
 import rospkg
 from planning_module import *
 
@@ -35,6 +37,10 @@ class ROSInterface:
         self.joint_names = self.config['joint_names']
         self.joint_origins = [np.array(origin) for origin in self.config['fk']['joint_origins']]
         self.joint_axes = [np.array(axis) for axis in self.config['fk']['joint_axes']]
+        self.tf_listener = TransformListener()
+        self.tf_buffer = tf2_ros.Buffer()
+        self.tf_listener = tf2_ros.TransformListener(self.tf_buffer)
+
 
     def joint_state_callback(self, msg):
         self.last_joint_state = msg
@@ -46,14 +52,24 @@ class ROSInterface:
         else:
             start_angles = list(self.last_joint_state.position)
 
-        goal_xyz, goal_rpy = self.parse_mpl_command(req.mplcommand)
+        goal_xyz, goal_rpy, object_frame, reference_frame = self.parse_mpl_command(req.mplcommand)
         if goal_xyz is not None and goal_rpy is not None:
             rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}")
         else:
             rospy.logerr("Failed to parse MPL command.")
             return PlanRequestResponse()
 
-        goal_angles = self.inverse_kinematics(goal_xyz, goal_rpy, start_angles)
+        try:
+            object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(goal_xyz, goal_rpy, object_frame, reference_frame)
+            #rospy.loginfo(f"Object in Base Frame XYZ: {object_in_base_xyz}, RPY: {object_in_base_rpy}")
+
+            tcp_in_base_xyz, tcp_in_base_rpy = self.transform_goal(object_in_base_xyz, object_in_base_rpy, object_frame)
+            #rospy.loginfo(f"TCP in Base Frame XYZ: {tcp_in_base_xyz}, RPY: {tcp_in_base_rpy}")
+        except Exception as e:
+            rospy.logerr(f"Error transforming goal: {e}")
+            return PlanRequestResponse()
+
+        goal_angles = self.inverse_kinematics(tcp_in_base_xyz, tcp_in_base_rpy, start_angles)
         if goal_angles is not None:
             rospy.loginfo(f"Computed goal joint angles: {goal_angles}")
         else:
@@ -81,16 +97,92 @@ class ROSInterface:
         try:
             command_dict = json.loads(command)
             coordinates = command_dict['parameters']['coordinates']
+            object_frame = command_dict['parameters']['object']
+            reference_frame = command_dict['parameters']['reference']
             x = coordinates['x']
             y = coordinates['y']
             z = coordinates['z']
             R = coordinates['R']
             P = coordinates['P']
             Y = coordinates['Y']
-            return (x, y, z), (R, P, Y)
+            return (x, y, z), (R, P, Y), object_frame, reference_frame
         except Exception as e:
             rospy.logerr(f"Failed to parse MPL command: {e}")
-            return None, None
+            return None, None, None, None
+
+    def transform_object_to_base(self, goal_xyz, goal_rpy, object_frame, reference_frame):
+        try:
+            # reference frame to base frame
+           # rospy.loginfo("Looking up transform from irb1300_1150_base_link to {}".format(reference_frame))
+            T_base_reference = self.tf_buffer.lookup_transform("irb1300_1150_base_link", reference_frame, rospy.Time(0), rospy.Duration(1.0))
+           #rospy.loginfo(f"Transform irb1300_1150_base_link to {reference_frame}: {T_base_reference}")
+
+            #  goal in the reference frame- given
+            T_object_tcp = self.create_transform(goal_xyz, goal_rpy)
+            #rospy.loginfo(f"T_object_tcp: {T_object_tcp}")
+
+            # T_base_object = T_base_reference * T_object_tcp
+            T_base_object = self.combine_transforms(T_base_reference, T_object_tcp)
+            #rospy.loginfo(f"T_base_object: {T_base_object}")
+
+          
+            goal_translation = T_base_object.transform.translation
+            goal_rotation = T_base_object.transform.rotation
+            goal_rpy = tf.transformations.euler_from_quaternion([goal_rotation.x, goal_rotation.y, goal_rotation.z, goal_rotation.w])
+
+            return (goal_translation.x, goal_translation.y, goal_translation.z), goal_rpy
+        except tf2_ros.TransformException as e:
+            rospy.logerr(f"Transformation error: {e}")
+            raise
+
+    def transform_goal(self, object_in_base_xyz, object_in_base_rpy, object_frame):
+        try:
+            # object in base frame 
+            T_object_in_base = self.create_transform(object_in_base_xyz, object_in_base_rpy)
+
+            # object frame in TCP/ link_6
+            T_object_tcp = self.tf_buffer.lookup_transform(object_frame, "irb1300_1150_link_6", rospy.Time(0), rospy.Duration(1.0))
+            #rospy.loginfo(f"T_object_tcp: {T_object_tcp}")
+
+            # T_base_tcp = T_object_in_base * T_object_tcp
+            T_base_tcp = self.combine_transforms(T_object_in_base, T_object_tcp)
+            #rospy.loginfo(f"Final transform base to goal TCP: {T_base_tcp}")
+
+            # Extract the final goal position and orientation in the base frame
+            goal_translation = T_base_tcp.transform.translation
+            goal_rotation = T_base_tcp.transform.rotation
+            goal_rpy = tf.transformations.euler_from_quaternion([goal_rotation.x, goal_rotation.y, goal_rotation.z, goal_rotation.w])
+
+           # print ("transformed in base frame: ", goal_translation.x, goal_translation.y, goal_translation.z, goal_rpy)
+
+            return (goal_translation.x, goal_translation.y, goal_translation.z), goal_rpy
+        except tf2_ros.TransformException as e:
+            rospy.logerr(f"Transformation error: {e}")
+            raise
+
+    def create_transform(self, translation, rotation_rpy):
+        quaternion = tf.transformations.quaternion_from_euler(rotation_rpy[0], rotation_rpy[1], rotation_rpy[2])
+        transform = TransformStamped()
+        transform.transform.translation.x = translation[0]
+        transform.transform.translation.y = translation[1]
+        transform.transform.translation.z = translation[2]
+        transform.transform.rotation.x = quaternion[0]
+        transform.transform.rotation.y = quaternion[1]
+        transform.transform.rotation.z = quaternion[2]
+        transform.transform.rotation.w = quaternion[3]
+        return transform
+
+    def combine_transforms(self, T1, T2):
+        T1_matrix = tf.transformations.quaternion_matrix([T1.transform.rotation.x, T1.transform.rotation.y, T1.transform.rotation.z, T1.transform.rotation.w])
+        T1_matrix[0:3, 3] = [T1.transform.translation.x, T1.transform.translation.y, T1.transform.translation.z]
+        T2_matrix = tf.transformations.quaternion_matrix([T2.transform.rotation.x, T2.transform.rotation.y, T2.transform.rotation.z, T2.transform.rotation.w])
+        T2_matrix[0:3, 3] = [T2.transform.translation.x, T2.transform.translation.y, T2.transform.translation.z]
+        T_combined_matrix = np.dot(T1_matrix, T2_matrix)
+        T_combined = TransformStamped()
+        T_combined.transform.translation.x, T_combined.transform.translation.y, T_combined.transform.translation.z = T_combined_matrix[0:3, 3]
+        quaternion = tf.transformations.quaternion_from_matrix(T_combined_matrix)
+        T_combined.transform.rotation.x, T_combined.transform.rotation.y, T_combined.transform.rotation.z, T_combined.transform.rotation.w = quaternion
+        return T_combined
 
     def inverse_kinematics(self, target_xyz, target_rpy, initial_state=None):
         if initial_state is None:
@@ -111,7 +203,7 @@ class ROSInterface:
                 solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
                 if solution is not None:
                     solutions.append(solution)
-                    rospy.loginfo(f"{solver_type} solution: {solution}")
+                    #rospy.loginfo(f"{solver_type} solution: {solution}")
 
         if not solutions:
             return None
@@ -228,7 +320,7 @@ class ROSInterface:
 
 if __name__ == '__main__':
     try:
-        
+        '''
         cd = CollisionDetection()
         lp = LinearPlanner()
         config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
@@ -236,6 +328,7 @@ if __name__ == '__main__':
         CartesianPlanner(robot_model)
         pm = PlanManager()
         pi = PlanningInterface()
+        '''
         ros_interface = ROSInterface()
         rospy.spin()
     except rospy.ROSInterruptException:
