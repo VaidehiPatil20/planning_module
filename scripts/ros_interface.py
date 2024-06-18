@@ -320,7 +320,7 @@ class ROSInterface:
 
 if __name__ == '__main__':
     try:
-        '''
+        
         cd = CollisionDetection()
         lp = LinearPlanner()
         config_path = rp.get_path('planning_module') + "/config/robot1_config.yaml"
@@ -328,7 +328,7 @@ if __name__ == '__main__':
         CartesianPlanner(robot_model)
         pm = PlanManager()
         pi = PlanningInterface()
-        '''
+        
         ros_interface = ROSInterface()
         rospy.spin()
     except rospy.ROSInterruptException:
