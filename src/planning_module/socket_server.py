@@ -3,7 +3,7 @@ import socket
 import json
 from threading import Thread
 import logging
-
+import time
 logging.basicConfig(level=logging.INFO)
 
 class SocketServer:
@@ -22,8 +22,13 @@ class SocketServer:
     def run_server(self, handler):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             # Set a timeout so we can check if we should shutdown, since .accpet() blocks forever
-            s.settimeout(1.0)
-            s.bind(self.server_address)
+            s.settimeout(0.5)
+            
+            try:
+                s.bind(self.server_address)
+            except Exception as e:
+                logging.error(f"Failed to bind to {self.server_address}: {e}")
+                return
             s.listen()
             if self.id:
                 logging.info(f"{self.id} Listening at {self.server_address}")

@@ -92,8 +92,8 @@ class RobotModel:
         ik_solvers = {
             "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
             "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed"),
-            "Manip1": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation1"),
-            "Manip2": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation2")
+            # "Manip1": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation1"),
+            # "Manip2": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation2")
         }
         orientation = self.rpy_to_quaternion(*target_rpy)
         solutions = {solver_type: [] for solver_type in ik_solvers}
@@ -153,30 +153,48 @@ class CartesianPlanner(SocketServer):
     #                     conn.sendall(json.dumps(response).encode('utf-8'))
 
     def handle_plan_request(self, request):
+        print(f"Received request: {request}")
+        
         start_angles = request['start_angles']
-        goal_angles = request['goal_angles']
+        start_pose = request['start_pose']
+        goal_pose = request['goal_pose']
+        # goal_angles = request['goal_angles']
+        
         tolerance = request.get('tolerance', 0.01)
         num_steps = request.get('num_steps', 20)
 
-        cartesian_path = self.cartesian_path_planner(start_angles, goal_angles, num_steps, tolerance)
+        cartesian_path = self.cartesian_path_planner(start_angles, start_pose, goal_pose, num_steps, tolerance)
         
         return {'valid_path': cartesian_path}
 
     def interpolate_cartesian_points(self, start_point, end_point, num_steps):
-        t = np.linspace(0, 1, num_steps)
-        return np.outer(1 - t, start_point) + np.outer(t, end_point)
+        interpolated_points = []
+        for i in range(num_steps):
+            fraction = i / float(num_steps - 1)
+            interpolated_point = start_point + fraction * (end_point - start_point)
+            interpolated_points.append(interpolated_point)
+        return interpolated_points
 
-    def cartesian_path_planner(self, start_angles, goal_angles, num_steps=20, tolerance=0.01):
-        start_pos, start_orient_matrix = self.robot.extended_forward_kinematics(start_angles)
-        goal_pos, goal_orient_matrix = self.robot.extended_forward_kinematics(goal_angles)
+        # t = np.linspace(0, 1, num_steps)
+        # return np.outer(1 - t, start_point) + np.outer(t, end_point)
+
+    def cartesian_path_planner(self, start_angles, start_pose, goal_pose, num_steps=20, tolerance=0.01):
+        # start_pos, start_orient_matrix = self.robot.extended_forward_kinematics(start_angles)
+        # goal_pos, goal_orient_matrix = self.robot.extended_forward_kinematics(goal_angles)
+        
+        start_pos = np.array(start_pose['position'])
+        start_orient_rpy = np.array(start_pose['orientation'])
+        
+        goal_pos = np.array(goal_pose['position'])
+        goal_orient_rpy = np.array(goal_pose['orientation'])
         
         dist = np.linalg.norm(goal_pos - start_pos)
         num_steps = max(int(dist / tolerance), 3)
         
-        print(f"Distance: {dist}, Num steps: {num_steps}")
-
-        start_orient_rpy = self.robot.rotation_matrix_to_euler_angles(start_orient_matrix)
-        goal_orient_rpy = self.robot.rotation_matrix_to_euler_angles(goal_orient_matrix)
+        print(f"Distance: {dist}, Num Steps: {num_steps}")
+        
+        # start_orient_rpy = self.robot.rotation_matrix_to_euler_angles(start_orient_matrix)
+        # goal_orient_rpy = self.robot.rotation_matrix_to_euler_angles(goal_orient_matrix)
 
         start_point = np.hstack((start_pos, start_orient_rpy))
         end_point = np.hstack((goal_pos, goal_orient_rpy))
@@ -204,9 +222,9 @@ class CartesianPlanner(SocketServer):
                 current_joint_angles = best_solution[1]
             else:
                 print(f"No valid IK solution found for point {point}")
-        
-        print("\nMaximum Deviation in Joint Angles:")
-        print(max_deviation)
+                
+        print(f"\nJoint Trajectory len: {len(joint_trajectory)}/{num_steps}")        
+        print(f"Maximum Deviation in Joint Angles: {max_deviation}")
 
         return joint_trajectory
 

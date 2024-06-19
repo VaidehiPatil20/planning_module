@@ -49,12 +49,14 @@ class ROSInterface:
     def handle_plan_request(self, req):
         if self.last_joint_state is None:
             rospy.logwarn("No valid joint state available. Using default [0, 0, 0, 0, 0, 0].")
-            start_angles = [0, 0, 0, 0, 0, 0]
+            # start_angles = [0, 0, 0, 0, 0, 0]
             raise Exception("No valid joint state available.")
         else:
             start_angles = list(self.last_joint_state.position)
 
-        goal_xyz, goal_rpy, object_frame, reference_frame, tolerance = self.parse_mpl_command(req.mplcommand)
+        start_pos, start_rpy = self.extended_forward_kinematics(start_angles)
+        
+        goal_xyz, goal_rpy, object_frame, reference_frame, tolerance, max_vel = self.parse_mpl_command(req.mplcommand)
         if goal_xyz is not None and goal_rpy is not None:
             rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}, Object Frame: {object_frame}, Reference Frame: {reference_frame}, Tolerance: {tolerance}")            
         else:
@@ -82,6 +84,8 @@ class ROSInterface:
 
         request_data = {
             'start_angles': start_angles,
+            'start_pose': {'position': list(start_pos), 'orientation': list(start_rpy)},
+            'goal_pose': {'position': list(tcp_in_base_xyz), 'orientation': list(tcp_in_base_rpy)},
             'goal_angles': goal_angles,
             'tolerance': tolerance
         }
@@ -95,7 +99,7 @@ class ROSInterface:
 
         rospy.loginfo(f"Received response from planning interface: {response_data}")
 
-        valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'])
+        valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'], tolerance, max_vel)
 
         return PlanRequestResponse(valid_path_msg)
 
@@ -114,7 +118,8 @@ class ROSInterface:
             
             options:dict = command_dict['parameters']['options']
             tolerance = options.get('TOL', 0.01)
-            return (x, y, z), (R, P, Y), object_frame, reference_frame, tolerance
+            max_vel = options.get('VEL', 1.0)
+            return (x, y, z), (R, P, Y), object_frame, reference_frame, tolerance, max_vel
         except Exception as e:
             rospy.logerr(f"Failed to parse MPL command: {e}")
             return None, None, None, None
@@ -220,17 +225,19 @@ class ROSInterface:
         rospy.loginfo(f"Best IK Solution: {best_solution}")
         return best_solution
 
-    def convert_path_to_joint_trajectory(self, valid_path):
+    def convert_path_to_joint_trajectory(self, valid_path, tolerance, max_vel):
         trajectory_msg = JointTrajectory()
         trajectory_msg.joint_names = self.joint_names
         time_from_start = rospy.Duration(0.0)
+        step_time = tolerance/max_vel
+        print("step_time: ", step_time)
 
         for i, joint_positions in enumerate(valid_path):
             point = JointTrajectoryPoint()
             point.positions = joint_positions
             point.time_from_start = time_from_start
             trajectory_msg.points.append(point)
-            time_from_start += rospy.Duration(0.1)  
+            time_from_start += rospy.Duration(step_time)  
 
         return trajectory_msg
 
@@ -303,10 +310,10 @@ class ROSInterface:
                 self.send_data(s, json.dumps(data).encode('utf-8'))
                 rospy.loginfo("Data sent, waiting for response...")
                 response = self.recv_data(s)
-                rospy.loginfo("Response received from planning interface")
+                rospy.loginfo(f"Response received from planning interface: {len(response)} bytes")
                 return json.loads(response.decode('utf-8'))
         except Exception as e:
-            rospy.logerr(f"Failed to communicate with planning interface: {e}")
+            rospy.logerr(f"Failed to communicate with planning interface: {type(e)} {e}")
             return None
 
     def send_data(self, conn, data):
