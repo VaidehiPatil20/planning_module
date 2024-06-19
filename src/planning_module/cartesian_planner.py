@@ -13,7 +13,7 @@ class RobotModel:
 
         self.chain_start = self.config['ik']['chain_start']
         self.chain_end = self.config['ik']['chain_end']
-        self.ik_timeout = 0.01
+        self.ik_timeout = 0.005
         self.ik_epsilon = 1e-3
         self.joint_names = self.config['joint_names']
         self.joint_origins = [np.array(origin) for origin in self.config['fk']['joint_origins']]
@@ -91,13 +91,15 @@ class RobotModel:
     def inverse_kinematics(self, target_xyz, target_rpy, seed_state):
         ik_solvers = {
             "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
-            "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed")
+            "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed"),
+            "Manip1": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation1"),
+            "Manip2": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation2")
         }
         orientation = self.rpy_to_quaternion(*target_rpy)
         solutions = {solver_type: [] for solver_type in ik_solvers}
         
         for solver_type, solver in ik_solvers.items():
-            for _ in range(10):
+            for _ in range(1):
                 solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
                 if solution is not None:
                     solutions[solver_type].append(solution)
@@ -190,6 +192,7 @@ class CartesianPlanner(SocketServer):
         for point in cartesian_path:
             target_xyz = point[:3]
             target_rpy = point[3:]
+            
 
             solutions = self.robot.inverse_kinematics(target_xyz, target_rpy, current_joint_angles)
             best_solution, _ = self.robot.select_best_solution(solutions, current_joint_angles)
@@ -206,7 +209,6 @@ class CartesianPlanner(SocketServer):
         print(max_deviation)
 
         return joint_trajectory
-        return joint_trajectories["SimpleSeed"]
 
 if __name__ == "__main__":
     rospy.init_node('planner_comparison')

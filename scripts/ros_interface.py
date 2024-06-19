@@ -56,7 +56,7 @@ class ROSInterface:
 
         goal_xyz, goal_rpy, object_frame, reference_frame, tolerance = self.parse_mpl_command(req.mplcommand)
         if goal_xyz is not None and goal_rpy is not None:
-            rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}")
+            rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}, Object Frame: {object_frame}, Reference Frame: {reference_frame}, Tolerance: {tolerance}")            
         else:
             rospy.logerr("Failed to parse MPL command.")
             raise Exception("Failed to parse MPL command.")
@@ -64,10 +64,10 @@ class ROSInterface:
 
         try:
             object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(goal_xyz, goal_rpy, object_frame, reference_frame)
-            #rospy.loginfo(f"Object in Base Frame XYZ: {object_in_base_xyz}, RPY: {object_in_base_rpy}")
+            rospy.loginfo(f"Object in Base Frame XYZ: {object_in_base_xyz}, RPY: {object_in_base_rpy}")
 
             tcp_in_base_xyz, tcp_in_base_rpy = self.transform_goal(object_in_base_xyz, object_in_base_rpy, object_frame)
-            #rospy.loginfo(f"TCP in Base Frame XYZ: {tcp_in_base_xyz}, RPY: {tcp_in_base_rpy}")
+            rospy.loginfo(f"TCP in Base Frame XYZ: {tcp_in_base_xyz}, RPY: {tcp_in_base_rpy}")
         except Exception as e:
             rospy.logerr(f"Error transforming goal: {e}")
             return PlanRequestResponse()
@@ -194,8 +194,6 @@ class ROSInterface:
         return T_combined
 
     def inverse_kinematics(self, target_xyz, target_rpy, initial_state=None):
-        if initial_state is None:
-            initial_state = [0.0] * 6
 
         ik_solvers = {
             "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
@@ -207,10 +205,10 @@ class ROSInterface:
         solutions = []
 
         for solver_type, solver in ik_solvers.items():
-            for _ in range(10):
-                if not seed_state:
-            seed_state = np.random.uniform(-np.pi, np.pi, solver.number_of_joints)
-                solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
+            for _ in range(1):
+                if not initial_state:
+                    initial_state = np.random.uniform(-np.pi, np.pi, solver.number_of_joints)
+                solution = solver.get_ik(initial_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
                 if solution is not None:
                     solutions.append(solution)
                     #rospy.loginfo(f"{solver_type} solution: {solution}")
