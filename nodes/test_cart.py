@@ -5,6 +5,7 @@ from trac_ik_python.trac_ik import IK
 from geometry_msgs.msg import Quaternion
 import tf
 import yaml
+from scipy.spatial.transform import Rotation as R
 
 class RobotModel:
     def __init__(self, config_path):
@@ -16,6 +17,14 @@ class RobotModel:
         self.ik_timeout = 0.01
         self.ik_epsilon = 1e-3
         self.joint_names = self.config['joint_names']
+        self.joint_limits = [
+            (-np.pi, np.pi),         
+            (-95 * np.pi / 180, 155 * np.pi / 180), 
+            (-210 * np.pi / 180, 65 * np.pi / 180),  
+            (-230 * np.pi / 180, 230 * np.pi / 180),
+            (-130 * np.pi / 180, 130 * np.pi / 180), 
+            (-400 * np.pi / 180, 400 * np.pi / 180)  
+        ]
         self.joint_origins = [np.array(origin) for origin in self.config['fk']['joint_origins']]
         self.joint_axes = [np.array(axis) for axis in self.config['fk']['joint_axes']]
 
@@ -80,40 +89,87 @@ class RobotModel:
         euler = tf.transformations.euler_from_quaternion([quaternion.x, quaternion.y, quaternion.z, quaternion.w])
         return np.array(euler)
 
+    def normalize_angle(self, angle):
+        
+        return np.arctan2(np.sin(angle), np.cos(angle))
+
+    def adjust_angle(self, target_angle, current_angle):
+        
+        normalized_target = self.normalize_angle(target_angle)
+        if np.abs(normalized_target - current_angle) > np.pi:
+            if normalized_target > current_angle:
+                normalized_target -= 2 * np.pi
+            else:
+                normalized_target += 2 * np.pi
+        return normalized_target
+
+    def enforce_joint_limits(self, angles):
+      
+        angles = list(angles)  
+        for i in range(len(angles)):
+            min_limit, max_limit = self.joint_limits[i]
+            angles[i] = np.clip(angles[i], min_limit, max_limit)
+        return angles
+
+    def find_best_within_limits(self, target_angle, current_angle, min_limit, max_limit):
+       
+        options = [target_angle, target_angle + 2 * np.pi, target_angle - 2 * np.pi]
+        best_angle = None
+        smallest_difference = float('inf')
+        
+        for option in options:
+            if min_limit <= option <= max_limit:
+                difference = np.abs(option - current_angle)
+                if difference < smallest_difference:
+                    smallest_difference = difference
+                    best_angle = option
+        
+        return best_angle
+
+    def adjust_goal_angles(self, start_angles, goal_angles):
+        adjusted_goal_angles = []
+        for i in range(len(start_angles)):
+            adjusted_goal_angle = self.find_best_within_limits(goal_angles[i], start_angles[i], *self.joint_limits[i])
+            if adjusted_goal_angle is not None:
+                adjusted_goal_angles.append(adjusted_goal_angle)
+            else:
+                raise ValueError(f"no valid angle for joint{i+1}")
+        return adjusted_goal_angles
+
     def inverse_kinematics(self, target_xyz, target_rpy, seed_state):
-        ik_solvers = {
-            "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
-            #"Manip1": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation1"),
-            #"Manip2": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation2"),
-            "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed")
-        }
-        orientation = self.rpy_to_quaternion(*target_rpy)
-        solutions = {solver_type: [] for solver_type in ik_solvers}
+        ik_solver = IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon)
+        solutions = []
         
-        for solver_type, solver in ik_solvers.items():
-            for _ in range(10):
-                solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
-                if solution is not None:
-                    solutions[solver_type].append(solution)
+        for _ in range(10):
+            solution = ik_solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2],
+                                        *tf.transformations.quaternion_from_euler(*target_rpy))
+            if solution is not None:
+                solution = self.enforce_joint_limits(solution)
+                solutions.append(solution)
         
-        return solutions
+        return solutions[:10] 
 
     def select_best_solution(self, solutions, current_joint_angles):
         best_solution = None
-        best_deviation = float('inf')
+        best_weighted_deviation = float('inf')
         
-        for solver_type, solution_list in solutions.items():
-            for solution in solution_list:
-                deviation = np.sum(np.abs(np.array(solution) - np.array(current_joint_angles)))
-                
-                if np.any(np.abs(np.array(solution) - np.array(current_joint_angles)) > np.pi):
-                    continue
+        for solution in solutions:
+            solution = [self.adjust_angle(solution[i], current_joint_angles[i]) for i in range(len(solution))]
+            deviation_joint_6 = np.abs(solution[-1] - current_joint_angles[-1])
+            deviation_other_joints = np.sum(np.abs([solution[i] - current_joint_angles[i] for i in range(len(solution) - 1)]))
+            
+           
+            total_deviation = 10 * deviation_joint_6 + deviation_other_joints
+            
+            if total_deviation < best_weighted_deviation:
+                best_weighted_deviation = total_deviation
+                best_solution = solution
+        
+        return best_solution
 
-                if deviation < best_deviation:
-                    best_deviation = deviation
-                    best_solution = (solver_type, solution)
+    def angle_difference(self, angle1, angle2):
         
-        return best_solution, best_deviation
+        return self.normalize_angle(angle1 - angle2)
 
 class CartesianPlanner:
     def __init__(self, robot_model):
@@ -135,24 +191,31 @@ class CartesianPlanner:
 
         cartesian_path = self.interpolate_cartesian_points(start_point, end_point, num_steps)
         
-        joint_trajectory = []
-        current_joint_angles = start_angles
+        joint_trajectory = [start_angles]
         max_deviation = np.zeros(len(start_angles))
-        
-        for point in cartesian_path:
+        previous_joint_angles = start_angles
+
+        for point in cartesian_path[1:]:
             target_xyz = point[:3]
             target_rpy = point[3:]
 
-            solutions = self.robot.inverse_kinematics(target_xyz, target_rpy, current_joint_angles)
-            best_solution, _ = self.robot.select_best_solution(solutions, current_joint_angles)
+            solutions = self.robot.inverse_kinematics(target_xyz, target_rpy, previous_joint_angles)
+            best_solution = self.robot.select_best_solution(solutions, previous_joint_angles)
+            
+           # print(f"Top 10 IK solutions for point {point}:")
+            for idx, sol in enumerate(solutions):
+                print(f"Solution {idx + 1}: {sol}")
             
             if best_solution is not None:
-                joint_trajectory.append(best_solution[1])
-                deviation = np.abs(np.array(best_solution[1]) - np.array(current_joint_angles))
+                joint_trajectory.append(best_solution)
+                deviation = np.abs([self.robot.angle_difference(best_solution[i], previous_joint_angles[i]) for i in range(len(best_solution))])
                 max_deviation = np.maximum(max_deviation, deviation)
-                current_joint_angles = best_solution[1]
+                previous_joint_angles = best_solution
             else:
                 print(f"No valid IK solution for pt {point}")
+        
+        print("\nMaximum Deviation in Joint Angles:")
+        print(max_deviation)
         
         return joint_trajectory, max_deviation
 
@@ -163,25 +226,29 @@ if __name__ == "__main__":
     robot_model = RobotModel(config_path)
     cartesian_planner = CartesianPlanner(robot_model)
    
-    points = [
-      ( 0.3967737682765848, 0.3548053810224302, -0.30036357853455087, -1.6997890111546439, 0.4002100972337005, -1.4324468420287741), 
-        (6.756426930389055e-05, 0.24438377122318405, -0.14603311062627025, -3.1350263721032525, 0.09846837520762035, -0.008194853878780606)
-    ]
-    num_steps = 15
+    start_angles = (0.39707052716736857, 0.35506098591378366, -0.29921072093495926, 1.437022381180792, -0.4007983773594579, 1.7163665095594016)
+    goal_angles = (7.551188372905012e-08, 0.24430893753480318, -0.14595971452210724, 0.009905669539670373, -0.09832730169911619, 3.13169451469649)
+    num_steps = 15  
+    print(f"Original Start Angles: {start_angles}")
+    print(f"Original Goal Angles: {goal_angles}")
+
+    adjusted_goal_angles = robot_model.adjust_goal_angles(start_angles, goal_angles)
+
+    print(f"New Goal Angles: {adjusted_goal_angles}")
 
     cartesian_joint_trajectories = []
-    current_joint_angles = points[0]  
-    for i in range(len(points) - 1):
+    current_joint_angles = list(start_angles)
+    for i in range(1):
         start_angles = current_joint_angles
-        goal_angles = points[i + 1]
+        goal_angles = adjusted_goal_angles
         cartesian_joint_trajectory, max_deviation = cartesian_planner.plan_cartesian_path_from_joint_angles(start_angles, goal_angles, num_steps)
         cartesian_joint_trajectories.append(cartesian_joint_trajectory)
         current_joint_angles = cartesian_joint_trajectory[-1]  
 
-    #
     for joint_path in cartesian_joint_trajectories:
         for joint_angles in joint_path:
-            print(joint_angles)
-    
-    print("\nMaximum Deviation in Joint Angles:")
-    print(max_deviation)
+            fk_position, fk_orientation_matrix = robot_model.extended_forward_kinematics(joint_angles)
+            fk_orientation_rpy = robot_model.rotation_matrix_to_euler_angles(fk_orientation_matrix)
+            print(f"Joint Angles: {joint_angles}")
+        #    print(f"FK Position: {fk_position}")
+         #   print(f"FK Orientation (RPY): {fk_orientation_rpy}")

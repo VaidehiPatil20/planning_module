@@ -52,33 +52,51 @@ class ROSInterface:
         else:
             start_angles = list(self.last_joint_state.position)
 
-        goal_xyz, goal_rpy, object_frame, reference_frame = self.parse_mpl_command(req.mplcommand)
-        if goal_xyz is not None and goal_rpy is not None:
-            rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}")
-        else:
-            rospy.logerr("Failed to parse MPL command.")
-            return PlanRequestResponse()
+        goal_type, goal_data, object_frame, reference_frame = self.parse_mpl_command(req.mplcommand)
 
-        try:
-            object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(goal_xyz, goal_rpy, object_frame, reference_frame)
-            #rospy.loginfo(f"Object in Base Frame XYZ: {object_in_base_xyz}, RPY: {object_in_base_rpy}")
+        if goal_type == 'cartesian':
+            goal_xyz, goal_rpy = goal_data
+            if goal_xyz is not None and goal_rpy is not None:
+                rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}")
+            else:
+                rospy.logerr("Failed to parse MPL command.")
+                return PlanRequestResponse()
 
-            tcp_in_base_xyz, tcp_in_base_rpy = self.transform_goal(object_in_base_xyz, object_in_base_rpy, object_frame)
-            #rospy.loginfo(f"TCP in Base Frame XYZ: {tcp_in_base_xyz}, RPY: {tcp_in_base_rpy}")
-        except Exception as e:
-            rospy.logerr(f"Error transforming goal: {e}")
-            return PlanRequestResponse()
+            try:
+                object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(goal_xyz, goal_rpy, object_frame, reference_frame)
+                tcp_in_base_xyz, tcp_in_base_rpy = self.transform_goal(object_in_base_xyz, object_in_base_rpy, object_frame)
+            except Exception as e:
+                rospy.logerr(f"Error transforming goal: {e}")
+                return PlanRequestResponse()
 
-        goal_angles = self.inverse_kinematics(tcp_in_base_xyz, tcp_in_base_rpy, start_angles)
-        if goal_angles is not None:
-            rospy.loginfo(f"Computed goal joint angles: {goal_angles}")
-        else:
-            rospy.logerr("Inverse kinematics failed to compute goal joint angles.")
-            return PlanRequestResponse()
+            goal_angles = self.inverse_kinematics(tcp_in_base_xyz, tcp_in_base_rpy, start_angles)
+            if goal_angles is not None:
+                rospy.loginfo(f"Computed goal joint angles: {goal_angles}")
+            else:
+                rospy.logerr("Inverse kinematics failed to compute goal joint angles.")
+                return PlanRequestResponse()
+        
+        elif goal_type == 'joint':
+            goal_angles = goal_data
+            if goal_angles is not None:
+                #rospy.loginfo(f"Parsed goal joint angles: {goal_angles}")
+                #we still need cartesian start, goal
+                tcp_in_base_xyz, tcp_in_base_rpy = self.extended_forward_kinematics(goal_angles)
+            else:
+                rospy.logerr("Failed to parse MPL command.")
+                return PlanRequestResponse()
+
+        cartesian_start_xyz, cartesian_start_rpy = self.extended_forward_kinematics(start_angles)
+        cartesian_goal_xyz, cartesian_goal_rpy = tcp_in_base_xyz, tcp_in_base_rpy
 
         request_data = {
             'start_angles': start_angles,
-            'goal_angles': goal_angles
+            'goal_angles': goal_angles,
+            'cartesian_start': (cartesian_start_xyz.tolist() if isinstance(cartesian_start_xyz, np.ndarray) else cartesian_start_xyz,
+                                cartesian_start_rpy.tolist() if isinstance(cartesian_start_rpy, np.ndarray) else cartesian_start_rpy),
+            'cartesian_goal': (cartesian_goal_xyz.tolist() if isinstance(cartesian_goal_xyz, np.ndarray) else cartesian_goal_xyz,
+                               cartesian_goal_rpy.tolist() if isinstance(cartesian_goal_rpy, np.ndarray) else cartesian_goal_rpy),
+            'goal_type': goal_type
         }
         rospy.loginfo(f"Sending request to planning interface: {request_data}")
 
@@ -96,16 +114,24 @@ class ROSInterface:
     def parse_mpl_command(self, command):
         try:
             command_dict = json.loads(command)
-            coordinates = command_dict['parameters']['coordinates']
-            object_frame = command_dict['parameters']['object']
-            reference_frame = command_dict['parameters']['reference']
-            x = coordinates['x']
-            y = coordinates['y']
-            z = coordinates['z']
-            R = coordinates['R']
-            P = coordinates['P']
-            Y = coordinates['Y']
-            return (x, y, z), (R, P, Y), object_frame, reference_frame
+            if 'coordinates' in command_dict['parameters'] and 'j1' in command_dict['parameters']['coordinates']:
+                coordinates = command_dict['parameters']['coordinates']
+                joint_angles = [coordinates[f'j{i+1}'] for i in range(6)]
+                return 'joint', joint_angles, None, None
+            elif 'coordinates' in command_dict['parameters']:
+                coordinates = command_dict['parameters']['coordinates']
+                object_frame = command_dict['parameters']['object']
+                reference_frame = command_dict['parameters']['reference']
+                x = coordinates['x']
+                y = coordinates['y']
+                z = coordinates['z']
+                R = coordinates['R']
+                P = coordinates['P']
+                Y = coordinates['Y']
+                return 'cartesian', ((x, y, z), (R, P, Y)), object_frame, reference_frame
+            else:
+                rospy.logerr("Format is wrong")
+                return None, None, None, None
         except Exception as e:
             rospy.logerr(f"Failed to parse MPL command: {e}")
             return None, None, None, None

@@ -59,6 +59,7 @@ if __name__ == '__main__':
         pass
 
 '''
+
 #!/usr/bin/env python3
 import rospy
 import json
@@ -117,3 +118,61 @@ if __name__ == '__main__':
         test_client()
     except rospy.ROSInterruptException:
         pass
+'''
+#!/usr/bin/env python3
+import rospy
+import json
+from planning_module.srv import PlanRequest
+
+def test_client():
+    rospy.init_node('test_planning_client')
+    rospy.wait_for_service('/plan_request')
+    try:
+        plan_request = rospy.ServiceProxy('/plan_request', PlanRequest)
+    
+        joint_command = {
+                "uuid": "EC167DB4-F4F5-49CC-80D3-29919871F5A6",
+                "directive": "move",
+                "parameters": {
+                "object": "ARM_ID",
+                "reference": "JOINT_SPACE",
+                "coordinates": {
+                    "j1": 0,
+                    "j2": 0,
+                    "j3": 0,
+                    "j4": 0,
+                    "j5": 1.57,
+                    "j6": 0
+                },
+                "options": {
+                    "TOL": 0.01
+                }
+                },
+                "metadata": {
+                "line_number": 55,
+                "statement": "move(ARM_ID, JOINT_SPACE, {j1:0, j2: 0, j3: 0, j4:0, j5: 1.57, j6:0}, {TOL: 0.01})",
+                "type": "command",
+                "comment": None,
+                "id": 27,
+                "parsed_at": 1718838191.957207,
+                "dispatched_at": None,
+                "fulfilled_at": None
+                },
+                "valid": True
+
+  }
+
+     
+        command_str = json.dumps(joint_command)
+        response = plan_request(command_str)
+        rospy.loginfo(f"Received joint response: {response}")
+
+    except rospy.ServiceException as e:
+        rospy.logerr(f"Service call failed: {e}")
+
+if __name__ == '__main__':
+    try:
+        test_client()
+    except rospy.ROSInterruptException:
+        pass
+'''
