@@ -81,6 +81,8 @@ class ROSInterface:
             rospy.logerr("Inverse kinematics failed to compute goal joint angles.")
             raise Exception("Inverse kinematics failed to compute goal joint angles.")
             # return PlanRequestResponse()
+            raise Exception("Inverse kinematics failed to compute goal joint angles.")
+            # return PlanRequestResponse()
 
         request_data = {
             'start_angles': start_angles,
@@ -94,6 +96,7 @@ class ROSInterface:
         response_data = self.send_request_to_planning_interface(request_data)
         if response_data is None:
             rospy.logerr("No response from planning interface")
+            raise Exception("No response from planning interface")
             raise Exception("No response from planning interface")
             return PlanRequestResponse()
 
@@ -348,6 +351,23 @@ if __name__ == '__main__':
         
         ROSInterface()
         
+        threads:List[SocketServer] = []
+        
+        threads.append(CollisionDetection())
+        threads.append(LinearPlanner())
+        threads.append(CartesianPlanner(robot_model))
+        threads.append(PlanManager())
+        threads.append(PlanningInterface())
+        
+        ROSInterface()
+        
+        while not rospy.is_shutdown():
+            rospy.sleep(1)
+          
+        for thread in threads:
+            thread.shutdown_server()  
+            
+        # rospy.spin()
         while not rospy.is_shutdown():
             rospy.sleep(1)
           
