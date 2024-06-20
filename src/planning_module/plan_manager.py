@@ -36,24 +36,20 @@ class PlanManager(SocketServer):
 #TODO: choose best reponse and return 
 
     def handle_plan_request(self, request):
-        linear_response = self.send_request_to_planner(self.linear_planner_socket, request)
-        cartesian_response = self.send_request_to_planner(self.cartesian_planner_socket, request)
         
-        if linear_response is None or cartesian_response is None:
-            print("No response from planner")
-            return {'valid_path': []}
-
         if request['goal_type'] == 'joint':
-            return linear_response
+            return self.send_data(self.linear_planner_socket, request)
+        elif request['goal_type'] == 'cartesian':
+            return self.send_data(self.cartesian_planner_socket, request)
         else:
-            return cartesian_response 
+            raise ValueError(f"Invalid goal type: {request['goal_type']}") 
 
     def send_request_to_planner(self, planner_socket, data):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect(planner_socket)
                 s.sendall(json.dumps(data).encode('utf-8'))
-                response = s.recv(8192)  
+                response = self.recv_data(s)
                 return json.loads(response.decode('utf-8'))
         except Exception as e:
             print(f"Failed to communicate with planner {planner_socket}: {e}")

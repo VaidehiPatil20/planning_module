@@ -31,7 +31,7 @@ class PlanningInterface(SocketServer):
     #                     conn.sendall(json.dumps(response).encode('utf-8'))
 
     def handle_plan_request(self, request):
-        response_data = self.send_request_to_plan_manager(request)
+        response_data = self.send_data(self.plan_manager_socket, request)
         if response_data is None:
             print("No resp from PlanMgr")
             return {'valid_path': []}
@@ -42,7 +42,7 @@ class PlanningInterface(SocketServer):
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.connect(self.plan_manager_socket)
                 s.sendall(json.dumps(data).encode('utf-8'))
-                response = s.recv(8192)  
+                response = self.recv_data(s)
                 return json.loads(response.decode('utf-8'))
         except Exception as e:
             print(f"Failed to communicate with plan manager: {e}")

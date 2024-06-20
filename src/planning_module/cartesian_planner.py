@@ -91,7 +91,7 @@ class RobotModel:
         return solution
 
     def inverse_kinematics(self, target_xyz, target_rpy, seed_state):
-        ik_solvers = { Combine transforms: 
+        ik_solvers = { 
             "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
             "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed"),
             # "Manip1": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation1"),

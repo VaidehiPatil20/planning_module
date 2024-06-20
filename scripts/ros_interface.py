@@ -54,27 +54,54 @@ class ROSInterface:
         else:
             start_angles = list(self.last_joint_state.position)
 
-        start_pos, start_rpy = self.extended_forward_kinematics(start_angles)
+        tcp_start_xyz, tcp_start_rpy = self.extended_forward_kinematics(start_angles)
         
-        goal_xyz, goal_rpy, object_frame, reference_frame, tolerance, max_vel = self.parse_mpl_command(req.mplcommand)
-        if goal_xyz is not None and goal_rpy is not None:
-            rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}, Object Frame: {object_frame}, Reference Frame: {reference_frame}, Tolerance: {tolerance}")            
+        object_frame, reference_frame, goal, goal_type, options = self.parse_mpl_command(req.mplcommand)
+        
+        tolerance = options.get('TOL', 0.01)
+        max_vel = options.get('VEL', 1.0)
+        
+        goal_xyz = None
+        goal_rpy = None
+        goal_angles = None
+        
+        if goal_type == "cartesian":
+            object_goal_xyz = (goal.get('x'), goal.get('y'), goal.get('z'))
+            object_goal_rpy = (goal.get('R'), goal.get('P'), goal.get('Y'))
+            try:
+                object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(object_goal_xyz, object_goal_rpy, object_frame, reference_frame)
+                rospy.loginfo(f"Object in Base Frame XYZ: {object_in_base_xyz}, RPY: {object_in_base_rpy}")
+
+                tcp_goal_xyz, tcp_goal_rpy = self.transform_goal(object_in_base_xyz, object_in_base_rpy, object_frame)
+                
+                goal_xyz = list(tcp_goal_xyz)
+                goal_rpy = list(tcp_goal_rpy)
+                rospy.loginfo(f"TCP in Base Frame XYZ: {goal_xyz}, RPY: {goal_rpy}")
+            except Exception as e:
+                rospy.logerr(f"Error transforming goal: {e}")
+                raise Exception("Error transforming goal")
+            
+            goal_angles = self.inverse_kinematics(goal_xyz, goal_rpy, start_angles)
+
+            
+        elif goal_type == "joint":
+            goal_angles = []
+            for i in range(1, 7):
+                goal_angles.append(goal.get(f"J{i}", goal.get(f"j{i}", start_angles[i-1])))
+            
         else:
-            rospy.logerr("Failed to parse MPL command.")
-            raise Exception("Failed to parse MPL command.")
-            # return PlanRequestResponse()
+            rospy.logerr("Invalid goal type")
+            raise Exception("Invalid goal type")
+        
+        # if goal_xyz is not None and goal_rpy is not None:
+        #     rospy.loginfo(f"Parsed goal XYZ: {goal_xyz}, RPY: {goal_rpy}, Object Frame: {object_frame}, Reference Frame: {reference_frame}, Tolerance: {tolerance}")            
+        # else:
+        #     rospy.logerr("Failed to parse MPL command.")
+        #     raise Exception("Failed to parse MPL command.")
+        #     # return PlanRequestResponse()
 
-        try:
-            object_in_base_xyz, object_in_base_rpy = self.transform_object_to_base(goal_xyz, goal_rpy, object_frame, reference_frame)
-            rospy.loginfo(f"Object in Base Frame XYZ: {object_in_base_xyz}, RPY: {object_in_base_rpy}")
 
-            tcp_in_base_xyz, tcp_in_base_rpy = self.transform_goal(object_in_base_xyz, object_in_base_rpy, object_frame)
-            rospy.loginfo(f"TCP in Base Frame XYZ: {tcp_in_base_xyz}, RPY: {tcp_in_base_rpy}")
-        except Exception as e:
-            rospy.logerr(f"Error transforming goal: {e}")
-            return PlanRequestResponse()
 
-        goal_angles = self.inverse_kinematics(tcp_in_base_xyz, tcp_in_base_rpy, start_angles)
         if goal_angles is not None:
             rospy.loginfo(f"Computed goal joint angles: {goal_angles}")
         else:
@@ -86,10 +113,11 @@ class ROSInterface:
 
         request_data = {
             'start_angles': start_angles,
-            'start_pose': {'position': list(start_pos), 'orientation': list(start_rpy)},
-            'goal_pose': {'position': list(tcp_in_base_xyz), 'orientation': list(tcp_in_base_rpy)},
             'goal_angles': goal_angles,
-            'tolerance': tolerance
+            'start_pose': {'position': list(tcp_start_xyz), 'orientation': list(tcp_start_rpy)},
+            'goal_pose': {'position': goal_xyz, 'orientation': goal_rpy},
+            'tolerance': options.get('TOL', 0.01),
+            'goal_type': goal_type
         }
         rospy.loginfo(f"Sending request to planning interface: {request_data}")
 
@@ -97,10 +125,8 @@ class ROSInterface:
         if response_data is None:
             rospy.logerr("No response from planning interface")
             raise Exception("No response from planning interface")
-            raise Exception("No response from planning interface")
-            return PlanRequestResponse()
 
-        rospy.loginfo(f"Received response from planning interface: {response_data}")
+        rospy.loginfo(f"Received response from planning interface: {len(response_data)}")
 
         valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'], tolerance, max_vel)
 
@@ -108,24 +134,26 @@ class ROSInterface:
 
     def parse_mpl_command(self, command):
         try:
-            command_dict = json.loads(command)
-            coordinates = command_dict['parameters']['coordinates']
-            object_frame = command_dict['parameters']['object']
-            reference_frame = command_dict['parameters']['reference']
-            x = coordinates['x']
-            y = coordinates['y']
-            z = coordinates['z']
-            R = coordinates['R']
-            P = coordinates['P']
-            Y = coordinates['Y']
+            command:dict = json.loads(command).get('parameters')
             
-            options:dict = command_dict['parameters']['options']
+            object:str = command.get('object')
+            reference:str = command.get('reference')
+            coordinates:dict = command.get('coordinates')
+            options:dict = command.get('options')
+            
+            if reference.upper() in ["JOINT_SPACE", "JOINT", "JOINTSPACE"]:
+                goal_type = "joint"
+            else:
+                goal_type = "cartesian"
+
             tolerance = options.get('TOL', 0.01)
             max_vel = options.get('VEL', 1.0)
-            return (x, y, z), (R, P, Y), object_frame, reference_frame, tolerance, max_vel
+            
+
+            return object, reference, coordinates, goal_type, options
         except Exception as e:
             rospy.logerr(f"Failed to parse MPL command: {e}")
-            return None, None, None, None
+            raise ValueError("Failed to parse MPL command")
 
     def transform_object_to_base(self, goal_xyz, goal_rpy, object_frame, reference_frame):
         try:
@@ -319,7 +347,7 @@ class ROSInterface:
             rospy.logerr(f"Failed to communicate with planning interface: {type(e)} {e}")
             return None
 
-    def send_data(self, conn, data):
+    def send_data(self, conn:socket.socket, data):
         total_sent = 0
         while total_sent < len(data):
             sent = conn.send(data[total_sent:])
@@ -327,9 +355,9 @@ class ROSInterface:
                 raise RuntimeError("Socket connection broken")
             total_sent += sent
 
-    def recv_data(self, conn):
+    def recv_data(self, conn:socket.socket):
         chunks = []
-        while True:
+        while not rospy.is_shutdown():
             chunk = conn.recv(4096)
             if not chunk:
                 break
@@ -350,22 +378,6 @@ if __name__ == '__main__':
         threads.append(PlanningInterface())
         
         ROSInterface()
-        
-        threads:List[SocketServer] = []
-        
-        threads.append(CollisionDetection())
-        threads.append(LinearPlanner())
-        threads.append(CartesianPlanner(robot_model))
-        threads.append(PlanManager())
-        threads.append(PlanningInterface())
-        
-        ROSInterface()
-        
-        while not rospy.is_shutdown():
-            rospy.sleep(1)
-          
-        for thread in threads:
-            thread.shutdown_server()  
             
         # rospy.spin()
         while not rospy.is_shutdown():

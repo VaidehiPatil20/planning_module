@@ -45,3 +45,23 @@ class SocketServer:
                 except socket.timeout:
                     pass
         logging.info(f"{self.id} Closed")
+        
+    def send_data(self, target, data):
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(5)
+                s.connect(target)
+                s.sendall(json.dumps(data).encode('utf-8'))
+                response = self.recv_data(s)
+                return json.loads(response.decode('utf-8'))
+        except Exception as e:
+            raise ConnectionError(f"Failed to communicate with {target}: {type(e)} {e}")            
+
+    def recv_data(self, conn:socket.socket):
+        chunks = []
+        while True:
+            chunk = conn.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b''.join(chunks)
