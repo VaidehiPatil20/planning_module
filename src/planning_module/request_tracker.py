@@ -1,30 +1,27 @@
 #!/usr/bin/env python3
-import socket
-import json
-from threading import Thread
-
-class RequestTracker:
+from .socket_server import SocketServer
+class RequestTracker(SocketServer):
     def __init__(self, host='localhost', port=8005):
-        self.server_address = (host, port)
         self.requests = {}
-        self.start_server()
+        super().__init__(host, port, id="RequestTracker")
+        self.start_server(self.handle_request)
 
-    def start_server(self):
-        server = Thread(target=self.run_server)
-        server.start()
+    # def start_server(self):
+    #     server = Thread(target=self.run_server)
+    #     server.start()
 
-    def run_server(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(self.server_address)
-            s.listen()
-            while True:
-                conn, addr = s.accept()
-                with conn:
-                    data = conn.recv(4096)
-                    if data:
-                        request = json.loads(data.decode('utf-8'))
-                        response = self.handle_request(request)
-                        conn.sendall(json.dumps(response).encode('utf-8'))
+    # def run_server(self):
+    #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    #         s.bind(self.server_address)
+    #         s.listen()
+    #         while True:
+    #             conn, addr = s.accept()
+    #             with conn:
+    #                 data = conn.recv(4096)
+    #                 if data:
+    #                     request = json.loads(data.decode('utf-8'))
+    #                     response = self.handle_request(request)
+    #                     conn.sendall(json.dumps(response).encode('utf-8'))
 
     def handle_request(self, request):
         action = request.get('action')

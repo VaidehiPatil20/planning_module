@@ -1,7 +1,7 @@
 ik:
   chain_start: "irb1300_1150_base_link"
   chain_end: "irb1300_1150_link_6"
-  timeout: 0.005
+  timeout: 0.015
   epsilon: 1e-5
 
 fk:

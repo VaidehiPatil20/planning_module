@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
 import socket
 import json
-from threading import Thread
+from .socket_server import SocketServer
 
-class PlanningInterface:
+class PlanningInterface(SocketServer):
     def __init__(self, host='localhost', port=8010):
-        self.server_address = (host, port)
         self.plan_manager_socket = ('localhost', 8011)
-        self.start_server()
+        super().__init__(host, port, id="PlanningInterface")
+        self.start_server(self.handle_plan_request)
 
-    def start_server(self):
-        server = Thread(target=self.run_server)
-        server.start()
+    # def start_server(self):
+    #     server = Thread(target=self.run_server)
+    #     server.start()
        
 
-    def run_server(self):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(self.server_address)
-            s.listen()
-            print("Planning Interface is listening")
-            while True:
-                conn, addr = s.accept()
-                with conn:
-                    data = conn.recv(8192)  # buffer size , might need to make bigger? 
-                    if data:
-                        request = json.loads(data.decode('utf-8'))
-                        print(f"Planning Interface received req: {request}")
-                        response = self.handle_plan_request(request)
-                        print(f"Planning Interface sending resp: {response}")
-                        conn.sendall(json.dumps(response).encode('utf-8'))
+    # def run_server(self):
+    #     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    #         s.bind(self.server_address)
+    #         s.listen()
+    #         print("Planning Interface is listening")
+    #         while True:
+    #             conn, addr = s.accept()
+    #             with conn:
+    #                 data = conn.recv(8192)  # buffer size , might need to make bigger? 
+    #                 if data:
+    #                     request = json.loads(data.decode('utf-8'))
+    #                     print(f"Planning Interface received req: {request}")
+    #                     response = self.handle_plan_request(request)
+    #                     print(f"Planning Interface sending resp: {response}")
+    #                     conn.sendall(json.dumps(response).encode('utf-8'))
 
     def handle_plan_request(self, request):
         response_data = self.send_request_to_plan_manager(request)
