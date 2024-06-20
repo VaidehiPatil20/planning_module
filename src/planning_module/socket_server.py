@@ -49,7 +49,7 @@ class SocketServer:
     def send_data(self, target, data):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(5)
+                s.settimeout(10)
                 s.connect(target)
                 s.sendall(json.dumps(data).encode('utf-8'))
                 response = self.recv_data(s)

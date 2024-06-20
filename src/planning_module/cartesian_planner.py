@@ -92,7 +92,7 @@ class RobotModel:
 
     def inverse_kinematics(self, target_xyz, target_rpy, seed_state):
         ik_solvers = { 
-            "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
+            # "Distance": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Distance"),
             "Speed": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Speed"),
             # "Manip1": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation1"),
             # "Manip2": IK(self.chain_start, self.chain_end, timeout=self.ik_timeout, epsilon=self.ik_epsilon, solve_type="Manipulation2")
@@ -101,7 +101,7 @@ class RobotModel:
         solutions = {solver_type: [] for solver_type in ik_solvers}
         
         for solver_type, solver in ik_solvers.items():
-            for _ in range(1):
+            for _ in range(5):
                 solution = solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation.x, orientation.y, orientation.z, orientation.w)
                 if solution is not None:
                     solutions[solver_type].append(solution)
