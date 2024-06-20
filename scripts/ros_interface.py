@@ -126,7 +126,7 @@ class ROSInterface:
             rospy.logerr("No response from planning interface")
             raise Exception("No response from planning interface")
 
-        rospy.loginfo(f"Received response from planning interface: {len(response_data)}")
+        rospy.loginfo(f"Received response from planning interface - step:{len(response_data['valid_path'])}")
 
         valid_path_msg = self.convert_path_to_joint_trajectory(response_data['valid_path'], tolerance, max_vel)
 
@@ -259,8 +259,9 @@ class ROSInterface:
     def convert_path_to_joint_trajectory(self, valid_path, tolerance, max_vel):
         trajectory_msg = JointTrajectory()
         trajectory_msg.joint_names = self.joint_names
-        time_from_start = rospy.Duration(0.0)
-        step_time = tolerance/max_vel
+        time_from_start = rospy.Duration(0.01)
+        step_time = float((1/max_vel)* tolerance)
+        # step_time = max(step_time, 0.0001)
         print("step_time: ", step_time)
 
         for i, joint_positions in enumerate(valid_path):
@@ -381,7 +382,7 @@ if __name__ == '__main__':
             
         # rospy.spin()
         while not rospy.is_shutdown():
-            rospy.sleep(1)
+            rospy.sleep(0.1)
           
         for thread in threads:
             thread.shutdown_server()  
