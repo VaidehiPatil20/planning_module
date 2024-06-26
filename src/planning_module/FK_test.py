@@ -3,6 +3,9 @@ import rospy
 from trac_ik_python.trac_ik import IK
 import tf.transformations
 
+import tf.transformations
+from geometry_msgs.msg import Quaternion
+
 class RobotKinematics:
     def __init__(self, joint_axes, joint_origins):
         self.joint_axes = joint_axes
@@ -66,10 +69,13 @@ class RobotKinematics:
             final_transform = np.dot(final_transform, transform)
   
         position = final_transform[:3, 3]
+        quaternion = tf.transformations.quaternion_from_matrix(final_transform)
+
         orientation_matrix = final_transform[:3, :3]
         orientation_euler = self.rotation_matrix_to_euler_angles(orientation_matrix)
-    
-        return position, orientation_euler
+
+        return position, quaternion, orientation_euler
+
 
 class RobotKinematicsWithIK(RobotKinematics):
     def __init__(self, chain_start, chain_end, ik_timeout, ik_epsilon, joint_axes, joint_origins):
@@ -90,6 +96,17 @@ class RobotKinematicsWithIK(RobotKinematics):
         solution = ik_solver.get_ik(seed_state, target_xyz[0], target_xyz[1], target_xyz[2], orientation[0], orientation[1], orientation[2], orientation[3])
         rospy.loginfo(f"IK Solution: {solution}")
         return solution
+
+def rpy_to_quaternion(roll, pitch, yaw):
+
+    quaternion = tf.transformations.quaternion_from_euler(roll, pitch, yaw)
+    return Quaternion(*quaternion)
+    
+   
+
+
+
+
 
 # Parameters
 chain_start = "irb1300_1150_base_link"
@@ -117,23 +134,39 @@ joint_axes = [
 
 robot_kinematics_with_ik = RobotKinematicsWithIK(chain_start, chain_end, ik_timeout, ik_epsilon, joint_axes, joint_origins)
 
-joint_angles = [0.16884467942713272, -0.42489646625118677, -0.014985004081441402, 0.4261463543297882, 0.44355550495466345, -6.387017435389261e-05]
+#joint_angles = [0.16884467942713272, -0.42489646625118677, -0.014985004081441402, 0.4261463543297882, 0.44355550495466345, -6.387017435389261e-05]
 
-#joint_angles = [0,0,0,0,0,0]
+joint_angles = [0,0,0,0,-1.57,0]
 
-fk_position, fk_orientation_euler = robot_kinematics_with_ik.extended_forward_kinematics(joint_angles)
+fk_position, fk_orientation_euler, a = robot_kinematics_with_ik.extended_forward_kinematics(joint_angles)
+
 print ("joint angles: ", joint_angles)
 print("Forward Kinematics Position:", fk_position)
-print("Forward Kinematics Orientation (Euler):", fk_orientation_euler)
+print("Forward Kinematics Orientation (Euler):", fk_orientation_euler, a)
 
-target_xyz = fk_position 
-target_rpy = fk_orientation_euler 
+# target_xyz = fk_position 
+# target_rpy = fk_orientation_euler 
 
-ik_solution = robot_kinematics_with_ik.inverse_kinematics(target_xyz, target_rpy)
+# ik_solution = robot_kinematics_with_ik.inverse_kinematics(target_xyz, target_rpy)
 
-print("Inverse Kinematics Solution:", ik_solution)
+# print("Inverse Kinematics Solution:", ik_solution)
+
+x, y, z = 0.57506689 ,0.    ,     1.24299997
+roll, pitch, yaw =0, -1.57,0
+    
+    # Convert RPY to Quaternion
+quat = rpy_to_quaternion(roll, pitch, yaw)
+    
+print(f"Input XYZ: ({x}, {y}, {z})")
+print(f"Input RPY: ({roll}, {pitch}, {yaw})")
+print(f"Output Quaternion: (x: {quat.x}, y: {quat.y}, z: {quat.z}, w: {quat.w})")
 
 
+
+
+
+if __name__ == "__main__":
+    main()
 
 
 

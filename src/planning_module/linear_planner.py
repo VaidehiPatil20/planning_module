@@ -34,11 +34,12 @@ class LinearPlanner(SocketServer):
      
         return {'valid_path': path}
 
-    def linear_path_planner(self, start, goal, steps=20):
+    def linear_path_planner(self, start, goal, steps=40):
         start = np.array(start)
         goal = np.array(goal)
         t = np.linspace(0, 1, steps)
         path = np.outer(1 - t, start) + np.outer(t, goal)
+        print ("linear path", path )
         return path.tolist()
 
 if __name__ == '__main__':
