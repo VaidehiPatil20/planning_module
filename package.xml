@@ -74,6 +74,8 @@
   <exec_depend>actionlib</exec_depend>
   <exec_depend>actionlib_msgs</exec_depend>
 
+  <depend>trac_ik_python</depend>
+
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
